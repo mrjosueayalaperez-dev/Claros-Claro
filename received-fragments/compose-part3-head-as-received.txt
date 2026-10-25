@@ -1,0 +1,390 @@
+# Claro code — PART 3 (AS RECEIVED via founder relay, Oct 25, 2026 ~6:43 PM ET)
+# Contains: compose.ts HEAD (types, copy, finders; shortService TRUNCATED at the seam where the
+# paste splices into the next file), routes index + p/$id, card.ts (whole), video.ts server
+# functions (whole), routes index repeated. Saved verbatim; see the seam inside shortService.
+
+export type Lang = "en" | "es";
+
+export type ShopPage = {
+  name: string;
+  line: string;
+  city: string;
+  hours: string;
+  price: string;
+  who: string;
+  visit: string;
+  questions: { q: string; a: string }[];
+  post: string;
+  listen: string;
+  gaps: string[];
+};
+
+const copy = {
+  en: {
+    notSaid: "Not said yet.",
+    ask: "Ask them before you go.",
+    walk: "Walk-ins",
+    appt: "By appointment",
+    wa: "Message on WhatsApp",
+    coming: "Message me if you're coming.",
+    confirm: "Confirm the price, the day, and the address. Only what was written here is known.",
+    write: "Write them",
+    where: "Where are they?",
+    much: "How much is it?",
+    when: "When are they open?",
+    who: "Who is it for?",
+    need: "Do I need an appointment?",
+    do: "What do they do?",
+    week: "Can I come this week?",
+    check: "What should I confirm?",
+    reach: "What do I send?",
+    both: "They can say it in Spanish and English.",
+    spokeEs: "They wrote this in Spanish.",
+    spokeEn: "They wrote this in English.",
+    hair: "Haircuts",
+    food: "Lunch",
+    clean: "House cleaning",
+    teach: "Lessons",
+    trade: "Home repair",
+    shop: "This shop",
+    inCity: (s: string, c: string) => `${s} in ${c}`,
+    gapCity: "Add the city",
+    gapPrice: "Add the price",
+    gapHours: "Add the days",
+  },
+  es: {
+    notSaid: "Todavía no lo dijeron.",
+    ask: "Pregúntales antes de ir.",
+    walk: "Sin cita",
+    appt: "Con cita",
+    wa: "Escribe por WhatsApp",
+    coming: "Escríbeme si vienes.",
+    confirm: "Confirma el precio, el día y la dirección. Aquí solo está lo que escribieron.",
+    write: "Qué les escribo",
+    where: "¿Dónde están?",
+    much: "¿Cuánto cuesta?",
+    when: "¿Qué días abren?",
+    who: "¿Para quién es?",
+    need: "¿Necesito cita?",
+    do: "¿Qué hacen?",
+    week: "¿Puedo ir esta semana?",
+    check: "¿Qué confirmo?",
+    reach: "¿Qué mando?",
+    both: "Lo pueden decir en español y en inglés.",
+    spokeEs: "Lo escribieron en español.",
+    spokeEn: "Lo escribieron en inglés.",
+    hair: "Corte de cabello",
+    food: "Comida",
+    clean: "Limpieza de casas",
+    teach: "Clases",
+    trade: "Reparaciones",
+    shop: "Este negocio",
+    inCity: (s: string, c: string) => `${s} en ${c}`,
+    gapCity: "Agrega la ciudad",
+    gapPrice: "Agrega el precio",
+    gapHours: "Agrega los días",
+  },
+} as const;
+
+function clean(value: string) {
+  return value.replace(/\s+/g, " ").replace(/^[,.\s]+|[,.\s]+$/g, "").trim();
+}
+
+function sentence(text: string) {
+  const bit = text.split(/(?<=[.!?])\s/)[0] ?? text;
+  return clean(bit).slice(0, 140);
+}
+
+function findCity(text: string) {
+  const match = text.match(
+    /\b(?:in|en|near|cerca de|por)\s+([A-ZÁÉÍÓÚÑ][\p{L}'’-]+(?:\s+[A-ZÁÉÍÓÚÑ][\p{L}'’-]+){0,2})/u,
+  );
+  return match ? clean(match[1]) : "";
+}
+
+function findPrice(text: string) {
+  const match = text.match(
+    /(?:\$\s?\d[\d,]*(?:\s*[-–a]\s*\$?\s?\d[\d,]*)?|\d+\s*dólares(?:\s*[-–a]\s*\d+)?|desde\s+\$?\d[\d,]*)/i,
+  );
+  return match ? clean(match[0]) : "";
+}
+
+function findHours(text: string) {
+  const days =
+    /((?:lunes|martes|miércoles|miercoles|jueves|viernes|sábado|sabado|domingo|monday|tuesday|wednesday|thursday|friday|saturday|sunday)[^.]*)/i;
+  const match = text.match(days);
+  if (match) return clean(match[1]);
+  const clock = text.match(
+    /(\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)?(?:\s*(?:to|a|–|-)\s*\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)?)[^.]*)/i,
+  );
+  return clock ? clean(clock[1]) : "";
+}
+
+function findWho(text: string, lang: Lang) {
+  const es = lang === "es";
+  const bits: string[] = [];
+  if (/women|mujeres/i.test(text)) bits.push(es ? "Mujeres" : "Women");
+  if (/\bmen\b|hombres/i.test(text)) bits.push(es ? "Hombres" : "Men");
+  if (/kids|children|niños|ninos/i.test(text)) bits.push(es ? "Niños" : "Kids");
+  if (/famil/i.test(text)) bits.push(es ? "Familias" : "Families");
+  if (/worker|trabajador/i.test(text)) bits.push(es ? "Trabajadores" : "Workers");
+  return bits.join(", ");
+}
+
+function findVisit(text: string, lang: Lang) {
+  const t = copy[lang];
+  if (/sin cita|walk-?ins?/i.test(text)) return t.walk;
+  if (/whatsapp/i.test(text)) return t.wa;
+  if (/cita|appointment/i.test(text)) return t.appt;
+  return "";
+}
+
+function looksSpanish(text: string) {
+  return /[áéíóúñ¿¡]|(\ben\b|\bpara\b|\bcon\b|\bsin\b|\bcasas\b|\bcabello\b)/i.test(text);
+}
+
+function shortService(text: string, lang: Lang) {
+  const t = copy[lang];
+  if (/cabello|pelo|hair|barber|corte|fade/i.test(text)) return t.hair;
+  if (/lunch|comida|taco|restaurant|almuerzo|plato/i.test(text)) return t.food;
+  if (/limpi|clean|casa|house|apartment|apartamento/i.test(text)) return t.clean;
+  if (/tutor|clase|class|teach|lesson/i.test(text)) return t.teach;
+  if (/plom|plumb|electric|hvac|repar/i.test(<<< SEAM: the paste splices here into the routes file; shortService's ending was lost in transit >>>
+import { createFileRoute } from "@tanstack/react-router";
+import { ClaroApp } from "@/components/claro-app";
+
+export const Route = createFileRoute("/")({ component: ClaroApp });import { createFileRoute } from "@tanstack/react-router";
+import { PublicPage } from "@/components/claro-public";
+
+export const Route = createFileRoute("/p/$id")({
+  component: PublicRoute,
+});
+
+function PublicRoute() {
+  const { id } = Route.useParams();
+  return <PublicPage id={id} />;
+}import type { Lang } from "@/lib/claro/compose";
+
+export type ContactKind = "call" | "whatsapp" | "quote" | "appointment";
+
+export type SavedCard = {
+  id: string;
+  name: string;
+  area: string;
+  hours: string;
+  price: string;
+  lang: Lang;
+  contact: ContactKind;
+  phone: string;
+  beats: [string, string, string];
+  photo: string;
+  published: boolean;
+  weekly: string;
+  visits: number;
+  taps: number;
+  requests: string[];
+  outcomes: string[];
+};
+
+const KEY = "claro-card";
+
+export function loadCard(): SavedCard | null {
+  if (typeof localStorage === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (!raw) return null;
+    const card = JSON.parse(raw) as SavedCard;
+    if (!card?.id || !Array.isArray(card.beats)) return null;
+    return card;
+  } catch {
+    return null;
+  }
+}
+
+export function saveCard(card: SavedCard) {
+  const next = { ...card };
+  if (next.photo.length > 180_000) next.photo = "";
+  localStorage.setItem(KEY, JSON.stringify(next));
+}
+
+export function deleteCard() {
+  localStorage.removeItem(KEY);
+}
+
+export function phoneOk(value: string) {
+  return value.replace(/\D/g, "").length >= 8;
+}
+
+export function waLink(phone: string) {
+  return `https://wa.me/${phone.replace(/\D/g, "")}`;
+}import { createServerFn } from "@tanstack/react-start";
+import { threeBeats, type Lang } from "@/lib/claro/compose";
+
+type VideoAsk = {
+  name: string;
+  line: string;
+  city: string;
+  hours: string;
+  price: string;
+  who: string;
+  post: string;
+  visit: string;
+  script: string;
+  lang: Lang;
+  image?: string;
+  fromVideo?: boolean;
+};
+
+function clip(value: string, max: number) {
+  return value.replace(/\s+/g, " ").trim().slice(0, max);
+}
+
+function cleanScript(value: string) {
+  return value
+    .split("\n")
+    .map((line) => line.replace(/[^\S\n]+/g, " ").trim())
+    .filter(Boolean)
+    .slice(0, 3)
+    .join("\n")
+    .slice(0, 400);
+}
+
+function promptFor(data: VideoAsk) {
+  const edited = data.script
+    .split("\n")
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .slice(0, 3);
+  const lines =
+    edited.length === 3
+      ? edited
+      : threeBeats(
+          {
+            line: data.line,
+            name: data.name,
+            city: data.city,
+            hours: data.hours,
+            price: data.price,
+            visit: data.visit,
+          },
+          data.lang,
+        );
+  const language = data.lang === "es" ? "Spanish" : "English";
+  const listed = lines.map((line, index) => `${index + 1}. ${line}`).join(" ");
+  const words = `Speak these three lines in ${language}, slowly, every word, including the last word. Show only these three lines, one per row, in the top half. The bottom third stays empty. Do not repeat a line. Do not add a title under them. Do not cut a word. Do not add a price, a day, or a claim that is not in the lines. ${listed}`;
+  if (data.image) {
+    return [
+      "A 6-second vertical phone video that starts on this photo.",
+      data.fromVideo ? "The photo is one frame from a video the owner filmed." : "",
+      "Keep the same place and objects. Do not add people who are not already there. No logos. Never write a web address.",
+      words,
+    ]
+      .filter(Boolean)
+      .join(" ");
+  }
+  return [
+    "A 6-second vertical phone video.",
+    "Warm paper background, large ink type, one terracotta accent, like a printed card.",
+    "Never write a web address on screen.",
+    words,
+  ].join(" ");
+}
+
+function cleanImage(value: string) {
+  if (!value) return "";
+  if (!/^data:image\/(jpeg|png|webp);base64,[a-z0-9+/=\s]+$/i.test(value)) {
+    throw new Error("Use a photo.");
+  }
+  if (value.length > 1_800_000) throw new Error("That photo is too big.");
+  return value;
+}
+
+export const startShopVideo = createServerFn({ method: "POST" })
+  .validator((input: VideoAsk) => {
+    const image = cleanImage(input?.image ?? "");
+    const line = clip(input?.line ?? "", 400);
+    if (!image && line.length < 8) throw new Error("Add words, a photo, or a video first.");
+    return {
+      name: clip(input?.name ?? "", 80) || line.slice(0, 80) || "Shop",
+      line: line || clip(input?.post ?? "", 400),
+      city: clip(input?.city ?? "", 60),
+      hours: clip(input?.hours ?? "", 80),
+      price: clip(input?.price ?? "", 40),
+      who: clip(input?.who ?? "", 80),
+      post: clip(input?.post ?? "", 700),
+      visit: clip(input?.visit ?? "", 80),
+      script: cleanScript(input?.script ?? ""),
+      lang: input?.lang === "en" ? "en" : "es",
+      image,
+      fromVideo: Boolean(input?.fromVideo),
+    } satisfies VideoAsk;
+  })
+  .handler(async ({ data }) => {
+    const apiKey = process.env.XAI_API_KEY;
+    if (!apiKey) return { ok: false as const, error: "Video isn't available right now." };
+
+    const payload: {
+      model: string;
+      prompt: string;
+      duration: number;
+      aspect_ratio?: string;
+      resolution: string;
+      image?: { url: string };
+    } = {
+      model: "grok-imagine-video",
+      prompt: promptFor(data),
+      duration: 6,
+      resolution: "480p",
+    };
+    if (data.image) payload.image = { url: data.image };
+    else payload.aspect_ratio = "9:16";
+
+    const res = await fetch("https://api.x.ai/v1/videos/generations", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) return { ok: false as const, error: `Couldn't start the video (${res.status}).` };
+    const body = (await res.json()) as { request_id?: string };
+    if (!body.request_id) return { ok: false as const, error: "No video id came back." };
+    return { ok: true as const, requestId: body.request_id };
+  });
+
+export const pollShopVideo = createServerFn({ method: "POST" })
+  .validator((input: { requestId: string }) => {
+    if (!input?.requestId || !/^[\w-]{8,80}$/.test(input.requestId)) {
+      throw new Error("Bad video id.");
+    }
+    return input;
+  })
+  .handler(async ({ data }) => {
+    const apiKey = process.env.XAI_API_KEY;
+    if (!apiKey) return { ok: false as const, error: "Video isn't available right now." };
+
+    const res = await fetch(`https://api.x.ai/v1/videos/${data.requestId}`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    if (res.status === 202) return { ok: true as const, status: "pending" as const };
+    if (!res.ok) return { ok: false as const, error: `Video check failed (${res.status}).` };
+
+    const body = (await res.json()) as {
+      status?: string;
+      progress?: number;
+      video?: { url?: string };
+      error?: { message?: string };
+    };
+    if (body.status === "done" && body.video?.url) {
+      return { ok: true as const, status: "done" as const, url: body.video.url };
+    }
+    if (body.status === "failed") {
+      return { ok: false as const, error: body.error?.message || "The video didn't finish." };
+    }
+    return { ok: true as const, status: "pending" as const, progress: body.progress ?? 0 };
+  });import { createFileRoute } from "@tanstack/react-router";
+import { ClaroApp } from "@/components/claro-app";
+
+export const Route = createFileRoute("/")({ component: ClaroApp });

@@ -1,0 +1,17 @@
+# Claro code fragments — PART 2 (AS RECEIVED via founder relay, Oct 25, 2026 ~6:39 PM ET)
+# Preceded by a relayed Zelator message: "Worked for 15s — I checked, sir: Claros-Claro exists, but
+# GitHub currently reports the repository is empty. If the code was uploaded somewhere else, send me
+# that GitHub link so I can patch the actual files."
+# The two fragments below are the CLEAN versions of two areas damaged in the Part 1 paste
+# (the post/closer construction and the customerMessage template).
+
+const closer = t.coming.replace(/\.$/, "");
+const escapedCloser = closer.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const post = new RegExp(escapedCloser, "i").test(text)
+  ? text
+  : `${text.replace(/\.+$/, "")}. ${t.coming}`;
+
+const listen = `${name}. ${post}`;const customerMessage = lang === "es"
+  ? `Hola. Quiero ${service.toLowerCase()}${city ? ` en ${city}` : ""}${hours ? `, ${hours}` : ""}. ¿Tienen lugar?`
+  : `Hi. I want ${service.toLowerCase()}${city ? ` in ${city}` : ""}${hours ? `, ${hours}` : ""}. Do you have a spot?`;

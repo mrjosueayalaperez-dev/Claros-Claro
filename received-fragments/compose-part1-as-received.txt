@@ -1,0 +1,156 @@
+const offers = text.match(/^([\p{L}][\p{L}'’.\- ]{1,40}?) offers\b/u);
+  return offers ? clean(offers[1]) : "";
+}
+
+function orAsk(value: string, lang: Lang) {
+  return value || `${copy[lang].notSaid} ${copy[lang].ask}`;
+}
+
+export function buildPage(raw: string, lang: Lang): ShopPage {
+  const text = raw.trim().replace(/\s+/g, " ");
+  const t = copy[lang];
+  const city = findCity(text);
+  const price = findPrice(text);
+  const hours = findHours(text);
+  const who = findWho(text, lang);
+  const visit = findVisit(text, lang);
+  const line = text.length <= 180 ? text : sentence(text);
+  const service = shortService(text, lang);
+  const named = findName(text);
+  const name = named || (city ? t.inCity(service, city) : service);
+  const spanish = looksSpanish(text);
+  const english = /[a-z]/i.test(text) && /\b(the|and|in|for|with|walk|lunch|house)\b/i.test(text);
+
+  const customerMessage = lang === "es"
+    ? `Hola. Quiero \( {service.toLowerCase()} \){city ? ` en \( {city}` : ""} \){hours ? `, ${hours}` : ""}. ¿Tienen lugar?`
+    : `Hi. I want \( {service.toLowerCase()} \){city ? ` in \( {city}` : ""} \){hours ? `, ${hours}` : ""}. Do you have a spot?`;
+
+  const questions = [
+    { q: t.do, a: line || t.notSaid },
+    { q: t.where, a: orAsk(city, lang) },
+    { q: t.much, a: orAsk(price, lang) },
+    { q: t.when, a: orAsk(hours, lang) },
+    { q: t.who, a: orAsk(who, lang) },
+    { q: t.need, a: orAsk(visit, lang) },
+    { q: t.week, a: hours ? hours : orAsk("", lang) },
+    { q: t.reach, a: customerMessage },
+    { q: t.check, a: t.confirm },
+    {
+      q: lang === "es" ? "¿En qué idioma hablan?" : "What language do they use?",
+      a: spanish && english ? t.both : spanish ? t.spokeEs : t.spokeEn,
+    },
+  ];
+
+  const closer = t.coming.replace(/\.$/, "");
+  const post = new RegExp(closer, "i").test(text)
+    ? text
+    : `\( {text.replace(/\.+ \)/, "")}. ${t.coming}`;
+  const listen = `${name}. ${post}`;
+  const gaps = [
+    city ? "" : t.gapCity,
+    price ? "" : t.gapPrice,
+    hours ? "" : t.gapHours,
+  ].filter(Boolean);
+
+  return { name, line, city, hours, price, who, visit, questions, post, listen, gaps };
+}
+
+function dot(value: string) {
+  const text = value.replace(/\s+/g, " ").trim();
+  if (!text) return "";
+  return /[.!?]\( /.test(text) ? text : ` \){text}.`;
+}
+
+function sentences(text: string) {
+  return text
+    .replace(/\s+/g, " ")
+    .split(/(?<=[.!?])\s+/)
+    .map((bit) => bit.trim())
+    .filter((bit) => bit.length > 1);
+}
+
+export function threeBeats(
+  parts: { line: string; name: string; city: string; hours: string; price: string; visit: string },
+  lang: Lang,
+): [string, string, string] {
+  const t = copy[lang];
+  const said = sentences(parts.line);
+  const place = parts.city ? t.inCity(shortService(parts.line, lang), parts.city) : shortService(parts.line, lang);
+  const offer = parts.name && parts.name !== place ? `${parts.name}. ${place}` : place || said[0] || t.shop;
+  const whereWhen = hoursIn(parts.hours, lang) || said[1] || parts.city;
+  const visit = lang === "es" && /walk-?ins?/i.test(parts.visit) ? "Sin cita" : parts.visit;
+  const reach = [parts.price, visit || t.coming].filter(Boolean).join(". ") || said[2] || t.coming;
+  return [dot(offer), dot(whereWhen || offer), dot(reach)];
+}
+
+export function asPost(page: ShopPage): string {
+  const lines = page.questions
+    .filter((item) => !/not said yet|todavía no lo dijeron/i.test(item.a))
+    .map((item) => `${item.q} ${item.a}`);
+  return [page.name, page.post, "", ...lines].join("\n");
+}
+
+const dayEs: Record<string, string> = {
+  monday: "lunes",
+  tuesday: "martes",
+  wednesday: "miércoles",
+  thursday: "jueves",
+  friday: "viernes",
+  saturday: "sábado",
+  sunday: "domingo",
+  through: "a",
+  to: "a",
+};
+
+function hoursIn(hours: string, lang: Lang) {
+  if (!hours || lang === "en") return hours;
+  return hours.replace(
+    /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|through|to)\b/gi,
+    (word) => {
+      const next = dayEs[word.toLowerCase()] ?? word;
+      return word[0] === word[0].toUpperCase() ? next[0].toUpperCase() + next.slice(1) : next;
+    },
+  );
+}
+
+export function postsFor(
+  facts: { name: string; line: string; city: string; hours: string; price: string; who: string; visit: string },
+  lang: Lang,
+) {
+  const service = shortService(facts.line, lang);
+  const place = facts.city ? copy[lang].inCity(service, facts.city) : service;
+  const hours = hoursIn(facts.hours, lang);
+  const who =
+    lang === "es"
+      ? facts.who
+          .replace(/Men/g, "Hombres")
+          .replace(/Women/g, "Mujeres")
+          .replace(/Kids/g, "Niños")
+          .replace(/Families/g, "Familias")
+          .replace(/Workers/g, "Trabajadores")
+      : facts.who;
+  const visit = lang === "es" && /walk-?ins?/i.test(facts.visit) ? "Sin cita" : facts.visit;
+  const bits = [facts.name, place, hours, facts.price, visit, who].filter(Boolean);
+  return bits.join(". ").replace(/\.+/g, ".").replace(/\.\s*\./g, ". ") + (bits.length ? "." : "");
+}
+
+export const samples: { id: string; lang: Lang; label: string; text: string }[] = [
+  {
+    id: "hair",
+    lang: "es",
+    label: "Corte en Houston",
+    text: "Corto cabello en Houston. Martes a sábado. $25. Sin cita. Mujeres y niños.",
+  },
+  {
+    id: "lunch",
+    lang: "en",
+    label: "Lunch in San Antonio",
+    text: "I sell lunch plates in San Antonio. Monday to Friday, 11 to 2. $12. Families and workers.",
+  },
+  {
+    id: "clean",
+    lang: "es",
+    label: "Casas en Miami",
+    text: "Limpio casas en Miami. Lunes a viernes. Desde $120. Cita por WhatsApp. Casas y apartamentos.",
+  },
+];
